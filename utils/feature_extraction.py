@@ -26,16 +26,22 @@ def extract_features(image: np.ndarray, n_patches: int = 4) -> dict:
     texture_variance = float(np.var(laplacian))
 
     # Patch-level anomaly scores
-    patch_h, patch_w = h // n_patches, w // n_patches
+    patch_h, patch_w = max(h // n_patches, 1), max(w // n_patches, 1)
     patch_scores = []
     for i in range(n_patches):
         for j in range(n_patches):
-            patch = gray[i * patch_h : (i + 1) * patch_h, j * patch_w : (j + 1) * patch_w]
-            patch_edges = cv2.Canny(patch, 80, 180)
-            patch_scores.append(float(np.sum(patch_edges > 0) / patch_edges.size))
+            y1, y2 = i * patch_h, min((i + 1) * patch_h, h)
+            x1, x2 = j * patch_w, min((j + 1) * patch_w, w)
+            if y2 > y1 and x2 > x1:
+                patch = gray[y1:y2, x1:x2]
+                patch_edges = cv2.Canny(patch, 80, 180)
+                score = float(np.sum(patch_edges > 0) / (patch_edges.size if patch_edges.size > 0 else 1))
+                patch_scores.append(score)
+            else:
+                patch_scores.append(0.0)
 
-    patch_anomaly = float(np.std(patch_scores))
-    max_patch_edge = float(np.max(patch_scores))
+    patch_anomaly = float(np.std(patch_scores)) if patch_scores else 0.0
+    max_patch_edge = float(np.max(patch_scores)) if patch_scores else 0.0
 
     # Contour irregularity
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -90,10 +96,11 @@ def create_defect_heatmap(image: np.ndarray, n_patches: int = 8) -> np.ndarray:
         for j in range(n_patches):
             y1, y2 = i * patch_h, min((i + 1) * patch_h, h)
             x1, x2 = j * patch_w, min((j + 1) * patch_w, w)
-            patch = gray[y1:y2, x1:x2]
-            edges = cv2.Canny(patch, 80, 180)
-            score = np.sum(edges > 0) / edges.size
-            heatmap[y1:y2, x1:x2] = score
+            if y2 > y1 and x2 > x1:
+                patch = gray[y1:y2, x1:x2]
+                edges = cv2.Canny(patch, 80, 180)
+                score = np.sum(edges > 0) / (edges.size if edges.size > 0 else 1)
+                heatmap[y1:y2, x1:x2] = score
 
     heatmap = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     colored = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
